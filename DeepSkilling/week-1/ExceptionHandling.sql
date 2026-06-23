@@ -19,6 +19,13 @@ GO
 USE ExceptionDB;
 GO
 
+IF OBJECT_ID('dbo.AuditLog','U') IS NOT NULL DROP TABLE dbo.AuditLog;
+GO
+IF OBJECT_ID('dbo.Employees','U') IS NOT NULL DROP TABLE dbo.Employees;
+GO
+IF OBJECT_ID('dbo.Departments','U') IS NOT NULL DROP TABLE dbo.Departments;
+GO
+
 -- ==========================================
 -- TABLES
 -- ==========================================
@@ -28,6 +35,7 @@ CREATE TABLE dbo.Departments
     DepartmentID INT PRIMARY KEY,
     DepartmentName VARCHAR(100) NOT NULL
 );
+GO
 
 CREATE TABLE dbo.Employees
 (
@@ -40,6 +48,7 @@ CREATE TABLE dbo.Employees
     FOREIGN KEY (DepartmentID)
     REFERENCES dbo.Departments(DepartmentID)
 );
+GO
 
 CREATE TABLE dbo.AuditLog
 (
@@ -48,6 +57,7 @@ CREATE TABLE dbo.AuditLog
     ErrorMessage VARCHAR(4000),
     ActionDate DATETIME DEFAULT GETDATE()
 );
+GO
 
 -- ==========================================
 -- SAMPLE DATA
@@ -71,7 +81,7 @@ GO
 -- Basic TRY...CATCH
 -- ==========================================
 
-CREATE PROCEDURE dbo.AddEmployee
+CREATE OR ALTER PROCEDURE dbo.AddEmployee
     @EmployeeID INT,
     @FirstName VARCHAR(50),
     @LastName VARCHAR(50),
@@ -110,6 +120,8 @@ BEGIN
             'Insert Employee',
             ERROR_MESSAGE()
         );
+
+        THROW;
 
     END CATCH
 
@@ -184,31 +196,48 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    IF @Salary <= 0
-    BEGIN
+    BEGIN TRY
 
-        RAISERROR
+        IF @Salary <= 0
+        BEGIN
+            RAISERROR
+            (
+                'Salary must be greater than zero.',
+                16,
+                1
+            );
+        END
+
+        INSERT INTO dbo.Employees
+            (EmployeeID, FirstName, LastName, Email, Salary, DepartmentID)
+        VALUES
         (
-            'Salary must be greater than zero.',
-            16,
-            1
+            @EmployeeID,
+            @FirstName,
+            @LastName,
+            @Email,
+            @Salary,
+            @DepartmentID
         );
 
-        RETURN;
+    END TRY
 
-    END
+    BEGIN CATCH
 
-    INSERT INTO dbo.Employees
-        (EmployeeID, FirstName, LastName, Email, Salary, DepartmentID)
-    VALUES
-    (
-        @EmployeeID,
-        @FirstName,
-        @LastName,
-        @Email,
-        @Salary,
-        @DepartmentID
-    );
+        INSERT INTO dbo.AuditLog
+        (
+            Action,
+            ErrorMessage
+        )
+        VALUES
+        (
+            'Add Employee (Exercise 3)',
+            ERROR_MESSAGE()
+        );
+
+        THROW;
+
+    END CATCH
 
 END;
 GO
@@ -218,7 +247,7 @@ GO
 -- Nested TRY...CATCH
 -- ==========================================
 
-CREATE PROCEDURE dbo.TransferEmployee
+CREATE OR ALTER PROCEDURE dbo.TransferEmployee
     @EmployeeID INT,
     @DepartmentID INT
 AS
@@ -274,6 +303,7 @@ BEGIN
     BEGIN CATCH
 
         PRINT ERROR_MESSAGE();
+        THROW;
 
     END CATCH
 
@@ -285,7 +315,7 @@ GO
 -- Transaction with Error Logging
 -- ==========================================
 
-CREATE PROCEDURE dbo.BatchInsertEmployees
+CREATE OR ALTER PROCEDURE dbo.BatchInsertEmployees
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -338,6 +368,8 @@ BEGIN
             ERROR_MESSAGE()
         );
 
+        THROW;
+
     END CATCH
 
 END;
@@ -348,7 +380,7 @@ GO
 -- Dynamic RAISERROR
 -- ==========================================
 
-CREATE PROCEDURE dbo.ValidateSalary
+CREATE OR ALTER PROCEDURE dbo.ValidateSalary
     @Salary DECIMAL(10,2)
 AS
 BEGIN
@@ -373,7 +405,7 @@ BEGIN
         RAISERROR
         (
             'Salary is very low.',
-            16,
+            10,
             1
         );
         RETURN;
@@ -402,12 +434,31 @@ BEGIN CATCH
 END CATCH;
 GO
 
-EXEC dbo.ValidateSalary @Salary = 500;
+BEGIN TRY
+    EXEC dbo.ValidateSalary @Salary = 500;
+END TRY
+BEGIN CATCH
+    PRINT ERROR_MESSAGE();
+END CATCH;
 GO
 
-EXEC dbo.ValidateSalary @Salary = 5000;
+BEGIN TRY
+    EXEC dbo.ValidateSalary @Salary = 5000;
+END TRY
+BEGIN CATCH
+    PRINT ERROR_MESSAGE();
+END CATCH;
 GO
 
 SELECT *
 FROM dbo.AuditLog;
 GO
+
+-- Verify employee data
+SELECT *
+FROM dbo.Employees;
+GO
+
+USE master;
+GO
+
